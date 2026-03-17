@@ -1,6 +1,6 @@
 ---
 title: "CTA-ED Exercise 5: Unsupervised learning (topic models)"
-author: "[Names of all group members here]"
+author: "Ruixi Guo"
 date: "13/03/2024"
 output: html_document
 ---
@@ -38,7 +38,7 @@ library(quanteda.textmodels)
 You may need to install the preText package if you haven't done so yet. For that you will need to run the next code chunk (it is currently set to 'eval=F', which tells R 'do not execute this code chunk').
 That package is not readily available on through RStudio directly. It needs to be downloaded from the Github repository set up by its creater Matthew J Denny. We can do that using the command install_github(). This command is part of the 'devtools' package, which you will need to install as well (if you haven't done so already). The devtools package is directly available through R so it can be installed with the usual command install_packages. 
 
-```{r, message=F, eval=F}
+```{r}
 #install_package(devtools)
 devtools::install_github("matthewjdenny/preText")
 library(preText)
@@ -75,10 +75,10 @@ Once we have read in these data, we convert it into a different data shape: the 
 tocq_words <- tocq %>%
   mutate(booknumber = ifelse(gutenberg_id==815, "DiA1", "DiA2")) %>%
   unnest_tokens(word, text) %>%
-  filter(!is.na(word)) %>%
+  filter(!is.na(word)) %>% #exclude value = NA
   count(booknumber, word, sort = TRUE) %>%
   ungroup() %>%
-  anti_join(stop_words)
+  anti_join(stop_words) 
 
 tocq_dtm <- tocq_words %>%
   cast_dtm(booknumber, word, n)
@@ -153,7 +153,7 @@ bookfreq <- tidy_tocq %>%
   count(booknumber, word) %>%
   group_by(booknumber) %>%
   mutate(proportion = n / sum(n)) %>% 
-  select(-n) %>% 
+  select(-n) %>%  # delete column n
   spread(booknumber, proportion)
 
 ggplot(bookfreq, aes(x = DiA1, y = DiA2, color = abs(DiA1 - DiA2))) +
@@ -189,7 +189,7 @@ tocq <- tocq %>%
 tocq_chapter <- tocq %>%
   mutate(booknumber = ifelse(gutenberg_id==815, "DiA1", "DiA2")) %>%
   group_by(booknumber) %>%
-  mutate(chapter = cumsum(str_detect(text, regex("^chapter ", ignore_case = TRUE)))) %>%
+  mutate(chapter = cumsum(str_detect(text, regex("^chapter ", ignore_case = TRUE)))) %>% # Cumulative Sum
   ungroup() %>%
   filter(chapter > 0) %>%
   unite(document, booknumber, chapter)
@@ -343,5 +343,98 @@ preText_score_plot(preText_results)
 ## Exercises
 
 1. Choose another book or set of books from Project Gutenberg
+```{r}
+tocq1 <- gutenberg_download(3300, meta_fields = "author")
+```
+
+```{r}
+tocq1_words <- tocq1 %>%
+ mutate(booknumber = gutenberg_id) %>%
+  unnest_tokens(word, text) %>%
+  filter(!is.na(word)) %>% #exclude value = NA
+  count(booknumber, word, sort = TRUE) %>%
+  ungroup() %>%
+  anti_join(stop_words) 
+
+
+tocq1_dtm <- tocq1_words %>%
+  cast_dtm(booknumber, word, n)
+
+tm::inspect(tocq1_dtm)
+```
 2. Run your own topic model on these books, changing the k of topics, and evaluating accuracy.
+```{r}
+# topic = 10
+tocq1_lda <- LDA(tocq1_dtm, k = 10, control = list(seed = 1234))
+
+tocq1_topics <- tidy(tocq1_lda, matrix = "beta")
+
+head(tocq1_topics, n = 10)
+
+tocq1_top_terms <- tocq1_topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+tocq1_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free", ncol = 4) +
+  scale_y_reordered() +
+  theme_tufte(base_family = "Helvetica")
+
+```
+```{r}
+# topic = 5
+tocq5_lda <- LDA(tocq1_dtm, k = 5, control = list(seed = 1234))
+
+tocq5_topics <- tidy(tocq5_lda, matrix = "beta")
+
+head(tocq5_topics, n = 10)
+
+tocq5_top_terms <- tocq5_topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+tocq5_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free", ncol = 4) +
+  scale_y_reordered() +
+  theme_tufte(base_family = "Helvetica")
+
+```
 3. Validate different pre-processing techniques using `preText` on the new book(s) of your choice. 
+
+```{r}
+corp1 <- corpus(tocq1, text_field = "text")
+
+documents1 <- corp[sample(1:30000,1000)]
+
+print(names(documents[1:10]))
+
+```
+
+```{r}
+preprocessed_documents1 <- factorial_preprocessing(
+    documents1,
+    use_ngrams = TRUE,
+    infrequent_term_threshold = 0.2,
+    verbose = FALSE)
+```
+
+```{r}
+preText_results1 <- preText(
+    preprocessed_documents1,
+    dataset_name = "Tocqueville text",
+    distance_method = "cosine",
+    num_comparisons = 20,
+    verbose = FALSE)
+
+preText_score_plot(preText_results1)
+```
